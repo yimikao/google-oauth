@@ -4,11 +4,15 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"html/template"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"time"
+
+	"github.com/yimikao/googleoauth/utils"
 )
 
 func NewMux() http.Handler {
@@ -56,6 +60,13 @@ func oauthOnLogin(w http.ResponseWriter, r *http.Request) {
 
 func oauthOnCallback(w http.ResponseWriter, r *http.Request) {
 
+	err := r.ParseForm()
+	if err != nil {
+		log.Println(err.Error())
+		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		return
+	}
+
 	oauthStateCookie, _ := r.Cookie("oauthstate")
 
 	if r.FormValue("state") != oauthStateCookie.Value {
@@ -64,14 +75,30 @@ func oauthOnCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, err := getUserDataFromGoogle(r.FormValue("code"))
+	code := r.FormValue("code")
+	if code == "" {
+		log.Println("auth code not supplied")
+		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		return
+	}
+
+	data, err := getUserDataFromGoogle(code)
 	if err != nil {
 		log.Println(err.Error())
 		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}
 
-	fmt.Fprintf(w, "UserInfo: %s\n", data)
+	var ur = new(utils.UserResponse)
+	if err := json.Unmarshal(data, ur); err != nil {
+		log.Println(err.Error())
+		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
+		return
+	}
+
+	t, _ := template.ParseFiles("templates/success.html")
+	t.Execute(w, ur)
+	// fmt.Fprintf(w, "UserInfo: %s\n", data)
 }
 
 func getUserDataFromGoogle(code string) ([]byte, error) {
